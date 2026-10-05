@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Inbox-ia</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📇</text></svg>">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <p id="boot" class="loading">Chargement…</p>
+  <!-- Liste des prospects -->
+  <div id="app" hidden>
+    <header class="topbar">
+      <h1>Prospects</h1>
+      <input id="search" type="search" placeholder="Rechercher (entreprise, poste, contact…)" aria-label="Rechercher">
+    </header>
+    <nav id="filters" class="filters" aria-label="Filtrer par statut"></nav>
+    <main id="cards" class="cards" aria-live="polite"></main>
+    <p id="empty" class="empty" hidden>Aucun prospect.</p>
+  </div>
+
+  <!-- Fiche d'un prospect -->
+  <section id="detail" class="detail" hidden aria-modal="true" role="dialog" aria-labelledby="detail-title">
+    <header class="detail-bar">
+      <button id="back" class="ghost" type="button">← Retour</button>
+    </header>
+    <div id="detail-body" class="detail-body"></div>
+  </section>
+
+  <p id="error" class="error" role="alert" hidden></p>
+</body>
+</html>
