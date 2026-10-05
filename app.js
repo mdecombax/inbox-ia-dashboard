@@ -247,7 +247,7 @@ async function showDetail(id) {
     ),
     p.notes && h("section", { class: "block" },
       h("h3", {}, "Notes"),
-      h("p", { class: "notes" }, p.notes),
+      notesList(p.notes),
     ),
     h("section", { class: "block" },
       h("h3", {}, `Échanges (${echanges.data.length})`),
@@ -255,6 +255,25 @@ async function showDetail(id) {
     ),
     h("p", { class: "meta" }, `Fiche #${p.id} · créée ${relative(p.created_at)} · mise à jour ${relative(p.updated_at)}`),
   );
+}
+
+/**
+ * Notes : un fait par ligne ; « [AAAA-MM-JJ] » en tête de ligne ouvre une nouvelle analyse.
+ * Rendu : faits en liste, groupés par analyse, date affichée une fois par jour.
+ */
+function notesList(notes) {
+  const groups = [];
+  for (const line of notes.split("\n")) {
+    const m = line.match(/^\s*\[(\d{4}-\d{2}-\d{2})\]\s*(.*)$/);
+    if (m || !groups.length) groups.push({ date: m?.[1] ?? null, items: [] });
+    const text = (m ? m[2] : line).replace(/^\s*[-•*]\s*/, "").trim();
+    if (text) groups.at(-1).items.push(text.replace(/\b\d{4}-(\d{2})-(\d{2})\b/g, "$2/$1"));
+  }
+  return h("div", { class: "notes" }, groups.filter((g) => g.items.length).map((g, i, all) =>
+    h("div", { class: "note-group" },
+      g.date && g.date !== all[i - 1]?.date && h("p", { class: "note-date" }, fmtDateOnly(g.date)),
+      h("ul", {}, g.items.map((x) => h("li", {}, x))),
+    )));
 }
 
 function contactItem(c) {
