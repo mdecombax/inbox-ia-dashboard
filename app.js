@@ -1,5 +1,6 @@
 // Inbox-ia : dashboard en lecture seule, sans connexion (lecture publique, aucune écriture possible).
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import Sortable from "https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/+esm";
 
 // Clé publique : lecture seule (RLS), les écritures exigent la clé secrète du démon.
 const SUPABASE_URL = "https://qhyndxktnllkuabomsoa.supabase.co";
@@ -18,7 +19,7 @@ const STATUT_CLASS = {
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 const $ = (id) => document.getElementById(id);
 
-const state = { prospects: [], contacts: [], filter: null, search: "" };
+const state = { prospects: [], contacts: [], filter: null };
 window.debug = { state, db }; // inspection depuis la console
 
 // ---------------------------------------------------------------- utilitaires
@@ -91,9 +92,11 @@ async function load() {
   route();
 }
 
+// Ordre manuel (glisser-déposer) ; les nouveaux prospects (ordre null) passent en tête, par urgence.
 function sortKey(p) {
   const rank = STATUTS.indexOf(p.statut);
   return [
+    p.ordre == null ? -1 : p.ordre,
     rank < 0 ? STATUTS.length : rank,
     p.date_prochaine_action || "9999-12-31",
     -(p.dernier_echange ? Date.parse(p.dernier_echange) : 0),
@@ -107,13 +110,7 @@ function compare(a, b) {
 }
 
 function matches(p) {
-  if (state.filter && p.statut !== state.filter) return false;
-  const q = state.search.trim().toLowerCase();
-  if (!q) return true;
-  const contacts = state.contacts.filter((c) => c.prospect_id === p.id);
-  const hay = [p.entreprise, p.intermediaire, p.poste, p.prochaine_action, p.notes, ...contacts.flatMap((c) => [c.nom, c.email, c.telephone])]
-    .filter(Boolean).join(" ").toLowerCase();
-  return hay.includes(q);
+  return !state.filter || p.statut === state.filter;
 }
 
 function renderFilters() {
@@ -130,11 +127,40 @@ function renderFilters() {
   nav.append(chip("Tous", null, state.prospects.length), ...STATUTS.map((s) => chip(s, s, counts[s])));
 }
 
+let sortable = null;
+let lastDragEnd = 0; // le lâcher d'une carte déclenche un clic : ne pas ouvrir la fiche à ce moment-là
+
 function renderCards() {
   const list = state.prospects.filter(matches).sort(compare);
   const main = $("cards");
   main.replaceChildren(...list.map(card));
   $("empty").hidden = list.length > 0;
+  // Réordonner n'a de sens que sur la liste complète : désactivé pendant un filtre.
+  const canSort = !state.filter;
+  main.classList.toggle("sortable-off", !canSort);
+  $("sort-hint").hidden = canSort;
+  // forceFallback : même rendu à la souris et au doigt (la carte déplacée est un clone stylé .drag-card).
+  sortable ??= Sortable.create(main, {
+    handle: ".handle",
+    animation: 180,
+    easing: "cubic-bezier(.2, 0, 0, 1)",
+    forceFallback: true,
+    fallbackClass: "drag-card",
+    fallbackTolerance: 3,
+    ghostClass: "ghost-card",
+    scroll: true,
+    bubbleScroll: true,
+    onStart: () => main.classList.add("dragging"),
+    onEnd: (e) => { main.classList.remove("dragging"); lastDragEnd = Date.now(); saveOrder(e); },
+  });
+  sortable.option("disabled", !canSort);
+}
+
+async function saveOrder() {
+  const ids = [...$("cards").children].map((el) => Number(el.dataset.id));
+  ids.forEach((id, i) => { const p = state.prospects.find((x) => x.id === id); if (p) p.ordre = i + 1; });
+  const { error } = await db.rpc("ordonner_prospects", { ids });
+  if (error) { showError(error); await load(); }
 }
 
 function card(p) {
@@ -142,12 +168,14 @@ function card(p) {
   const late = due && due < today() && p.statut !== "Terminé";
   const isToday = due && due === today();
   const contacts = state.contacts.filter((c) => c.prospect_id === p.id);
-  return h("article", { class: `card ${STATUT_CLASS[p.statut] || ""}`, tabindex: "0", role: "button",
+  return h("article", { class: `card ${STATUT_CLASS[p.statut] || ""}`, tabindex: "0", role: "button", "data-id": p.id,
     "aria-label": `${title(p)}, ${p.poste || ""}, ${p.statut || "sans statut"}`,
-    onclick: () => openDetail(p.id),
+    onclick: () => { if (Date.now() - lastDragEnd > 400) openDetail(p.id); },
     onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(p.id); } },
   },
     h("div", { class: "card-head" },
+      h("span", { class: "handle", title: "Glisser pour déplacer", "aria-hidden": "true",
+        onclick: (e) => e.stopPropagation() }, "⠿"),
       h("span", { class: `badge ${STATUT_CLASS[p.statut] || ""}` }, p.statut || "Sans statut"),
       p.dernier_canal && h("span", { class: `canal canal-${p.dernier_canal}` }, p.dernier_canal === "gmail" ? "Gmail" : "WhatsApp"),
     ),
@@ -291,7 +319,6 @@ $("back").addEventListener("click", () => {
   if (history.length > 1 && location.hash) history.back();
   else location.hash = "";
 });
-$("search").addEventListener("input", (e) => { state.search = e.target.value; renderCards(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("detail").hidden) $("back").click(); });
 window.addEventListener("hashchange", route);
 

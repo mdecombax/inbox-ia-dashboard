@@ -73,7 +73,7 @@ button.ghost {
 button.ghost:hover { color: var(--text); background: var(--surface-2); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-input[type="search"], input[type="email"] {
+input[type="email"] {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -100,7 +100,7 @@ input[type="search"], input[type="email"] {
   top: 0;
   z-index: 2;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr;
   gap: 12px;
   align-items: center;
   padding: 12px 16px;
@@ -151,16 +151,50 @@ input[type="search"], input[type="email"] {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   cursor: pointer;
-  transition: transform .1s ease, border-color .1s ease;
 }
-.card:hover { transform: translateY(-1px); }
+/* Survol réservé aux souris : sur écran tactile, il resterait « collé » et gênerait le glisser. */
+@media (hover: hover) {
+  .card { transition: box-shadow .15s ease; }
+  .card:hover { box-shadow: 0 2px 4px rgb(0 0 0 / 8%), 0 6px 16px rgb(0 0 0 / 8%); }
+}
 .card.s-action { border-left-color: var(--action); }
 .card.s-programme { border-left-color: var(--programme); }
 .card.s-attente { border-left-color: var(--attente); }
 .card.s-termine { border-left-color: var(--termine); opacity: .75; }
 .card h2 { font-size: 17px; }
 
-.card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.card-head { display: flex; align-items: center; gap: 8px; }
+.card-head .canal { margin-left: auto; }
+.handle {
+  cursor: grab;
+  margin: -6px 0 -6px -8px;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  touch-action: none;
+  user-select: none;
+}
+.handle:active { cursor: grabbing; }
+.sortable-off .handle { visibility: hidden; }
+/* Emplacement d'arrivée pendant le glisser */
+.ghost-card {
+  background: transparent;
+  border: 2px dashed var(--border);
+  box-shadow: none;
+}
+.ghost-card > * { visibility: hidden; }
+/* Carte qui suit le doigt ou la souris */
+.drag-card, .drag-card.ghost-card {
+  opacity: 1 !important;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 22%) !important;
+  cursor: grabbing;
+}
+.drag-card > *, .drag-card.ghost-card > * { visibility: visible; }
+.cards.dragging { user-select: none; -webkit-user-select: none; }
+.sort-hint { margin: 4px 16px 0; color: var(--muted); font-size: 13px; }
 .poste { margin: 0; font-weight: 500; }
 .via { margin: 0; color: var(--muted); font-size: 14px; }
 .next { margin: 4px 0 0; font-size: 14px; }
@@ -301,7 +335,5 @@ input[type="search"], input[type="email"] {
 }
 
 @media (max-width: 560px) {
-  .topbar { grid-template-columns: 1fr auto; }
-  .topbar #search { grid-column: 1 / -1; grid-row: 2; }
   .msg { max-width: 94%; }
 }
