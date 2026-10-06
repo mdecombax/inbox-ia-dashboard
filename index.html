@@ -6,26 +6,31 @@
   <meta name="robots" content="noindex, nofollow">
   <title>Inbox-ia</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📇</text></svg>">
-  <link rel="stylesheet" href="style.css">
-  <script type="module" src="app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="style.css?v=2">
+  <script type="module" src="app.js?v=2"></script>
 </head>
 <body>
   <p id="boot" class="loading">Chargement…</p>
   <!-- Liste des prospects -->
-  <div id="app" hidden>
-    <header class="topbar">
-      <h1>Prospects</h1>
+  <div id="app" class="page" hidden>
+    <header class="masthead">
+      <h1>Recherche d'emploi</h1>
+      <p id="summary" class="summary"></p>
     </header>
+    <div id="pipeline" class="pipeline" aria-hidden="true"></div>
     <nav id="filters" class="filters" aria-label="Filtrer par statut"></nav>
-    <p id="sort-hint" class="sort-hint" hidden>Pour réordonner les cartes (poignée ⠿), affichez « Tous ».</p>
-    <main id="cards" class="cards" aria-live="polite"></main>
-    <p id="empty" class="empty" hidden>Aucun prospect.</p>
+    <p id="sort-hint" class="sort-hint" hidden>Pour réordonner les lignes (poignée ⠿), affichez « Tous ».</p>
+    <main id="cards" class="sheet" aria-live="polite"></main>
+    <p id="empty" class="empty" hidden>Aucun prospect avec ce statut.</p>
   </div>
 
   <!-- Fiche d'un prospect -->
   <section id="detail" class="detail" hidden aria-modal="true" role="dialog" aria-labelledby="detail-title">
     <header class="detail-bar">
-      <button id="back" class="ghost" type="button">← Retour</button>
+      <button id="back" class="back" type="button">← Prospects</button>
     </header>
     <div id="detail-body" class="detail-body"></div>
   </section>

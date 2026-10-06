@@ -19,7 +19,7 @@ const STATUT_CLASS = {
 const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 const $ = (id) => document.getElementById(id);
 
-const state = { prospects: [], contacts: [], filter: null };
+const state = { prospects: [], filter: null };
 window.debug = { state, db }; // inspection depuis la console
 
 // ---------------------------------------------------------------- utilitaires
@@ -77,14 +77,9 @@ function showError(err) {
 
 async function load() {
   $("app").hidden = true;
-  const [prospects, contacts] = await Promise.all([
-    db.from("prospects_cartes").select("*"),
-    db.from("contacts").select("prospect_id, nom, email, telephone"),
-  ]);
+  const prospects = await db.from("prospects_cartes").select("*");
   if (prospects.error) return showError(prospects.error);
-  if (contacts.error) return showError(contacts.error);
   state.prospects = prospects.data;
-  state.contacts = contacts.data;
   $("boot").hidden = true;
   $("app").hidden = false;
   renderFilters();
@@ -120,11 +115,26 @@ function renderFilters() {
   const chip = (label, value, n) =>
     h("button", {
       type: "button",
-      class: `chip ${value ? STATUT_CLASS[value] : ""} ${state.filter === value ? "active" : ""}`,
+      class: `chip ${value ? STATUT_CLASS[value] : ""} ${state.filter === value ? "active" : ""} ${n === 0 ? "empty-status" : ""}`,
       "aria-pressed": String(state.filter === value),
       onclick: () => { state.filter = value; renderFilters(); renderCards(); },
-    }, label, h("span", { class: "count" }, n));
+    }, value && h("span", { class: "dot" }), label, h("span", { class: "count" }, n));
   nav.append(chip("Tous", null, state.prospects.length), ...STATUTS.map((s) => chip(s, s, counts[s])));
+
+  // Barre de proportions : un segment par statut, largeur = nombre de prospects
+  $("pipeline").replaceChildren(...STATUTS.filter((s) => counts[s]).map((s) =>
+    h("span", { class: STATUT_CLASS[s], style: `flex: ${counts[s]}`, title: `${s} : ${counts[s]}` })));
+
+  // Résumé : ce qui demande une action aujourd'hui ou est en retard
+  const open = state.prospects.filter((p) => p.statut !== "Terminé");
+  const t = today();
+  const dueToday = open.filter((p) => p.date_prochaine_action === t).length;
+  const late = open.filter((p) => p.date_prochaine_action && p.date_prochaine_action < t).length;
+  const parts = [h("strong", {}, `${open.length} processus en cours`)];
+  if (dueToday) parts.push(`, ${dueToday} échéance${dueToday > 1 ? "s" : ""} aujourd'hui`);
+  if (late) parts.push(`, ${late} en retard`);
+  if (!dueToday && !late) parts.push(", rien d'urgent aujourd'hui");
+  $("summary").replaceChildren(...parts);
 }
 
 let sortable = null;
@@ -163,32 +173,53 @@ async function saveOrder() {
   if (error) { showError(error); await load(); }
 }
 
-function card(p) {
+/** Tampon de date de la prochaine action : jour de la semaine, jour, mois ; aujourd'hui / en retard mis en évidence. */
+function stamp(p) {
   const due = p.date_prochaine_action;
-  const late = due && due < today() && p.statut !== "Terminé";
-  const isToday = due && due === today();
-  const contacts = state.contacts.filter((c) => c.prospect_id === p.id);
-  return h("article", { class: `card ${STATUT_CLASS[p.statut] || ""}`, tabindex: "0", role: "button", "data-id": p.id,
+  if (!due) return h("div", { class: "stamp none", title: "Pas d'échéance" }, h("span", { class: "d" }, "—"));
+  const [y, m, d] = due.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d, 12));
+  const part = (opts) => date.toLocaleDateString("fr-FR", { timeZone: "UTC", ...opts });
+  const isToday = due === today();
+  const late = due < today() && p.statut !== "Terminé";
+  return h("div", { class: `stamp ${isToday ? "today" : ""} ${late ? "late" : ""}`,
+    title: isToday ? "Aujourd'hui" : late ? "En retard" : fmtDateOnly(due) },
+    h("span", { class: "wd" }, isToday ? "auj." : late ? "retard" : part({ weekday: "short" })),
+    h("span", { class: "d" }, d),
+    h("span", { class: "mo" }, part({ month: "short" })),
+  );
+}
+
+function statusLabel(p) {
+  return h("span", { class: `status ${STATUT_CLASS[p.statut] || ""}` }, h("span", { class: "dot" }), p.statut || "Sans statut");
+}
+
+/** « Poste, via intermédiaire » (l'intermédiaire seulement si l'entreprise est connue : sinon il sert de titre). */
+function subtitle(p) {
+  const via = p.entreprise && p.intermediaire && `via ${p.intermediaire}`;
+  if (!p.poste && !via) return null;
+  return h("p", { class: "row-sub" }, p.poste && h("span", { class: "poste" }, p.poste), p.poste && via && ", ", via);
+}
+
+function card(p) {
+  const n = p.nb_echanges || 0;
+  const canal = p.dernier_canal && h("span", { class: `canal canal-${p.dernier_canal}` }, p.dernier_canal === "gmail" ? "Gmail" : "WhatsApp");
+  return h("article", { class: `row ${STATUT_CLASS[p.statut] || ""}`, tabindex: "0", role: "button", "data-id": p.id,
     "aria-label": `${title(p)}, ${p.poste || ""}, ${p.statut || "sans statut"}`,
     onclick: () => { if (Date.now() - lastDragEnd > 400) openDetail(p.id); },
     onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(p.id); } },
   },
-    h("div", { class: "card-head" },
-      h("span", { class: "handle", title: "Glisser pour déplacer", "aria-hidden": "true",
-        onclick: (e) => e.stopPropagation() }, "⠿"),
-      h("span", { class: `badge ${STATUT_CLASS[p.statut] || ""}` }, p.statut || "Sans statut"),
-      p.dernier_canal && h("span", { class: `canal canal-${p.dernier_canal}` }, p.dernier_canal === "gmail" ? "Gmail" : "WhatsApp"),
-    ),
-    h("h2", {}, title(p)),
-    p.poste && h("p", { class: "poste" }, p.poste),
-    p.entreprise && p.intermediaire && h("p", { class: "via" }, `via ${p.intermediaire}`),
-    p.prochaine_action && h("p", { class: "next" },
-      due && h("span", { class: `due ${late ? "late" : ""} ${isToday ? "today" : ""}` }, isToday ? "Aujourd'hui" : fmtDateOnly(due)),
-      p.prochaine_action),
-    h("footer", { class: "card-foot" },
-      h("span", {}, `${p.nb_echanges} échange${p.nb_echanges > 1 ? "s" : ""}`),
-      p.dernier_echange && h("span", {}, `dernier ${relative(p.dernier_echange)}`),
-      contacts.length > 0 && h("span", {}, contacts.map((c) => c.nom).join(", ")),
+    h("span", { class: "handle", title: "Glisser pour déplacer", "aria-hidden": "true",
+      onclick: (e) => e.stopPropagation() }, "⠿"),
+    stamp(p),
+    h("div", { class: "row-main" },
+      h("div", { class: "row-title" }, h("h2", {}, title(p)), statusLabel(p)),
+      subtitle(p),
+      p.prochaine_action && h("p", { class: "next" }, p.prochaine_action),
+      h("p", { class: "row-meta" },
+        `${n} échange${n > 1 ? "s" : ""}`,
+        p.dernier_echange && `, le dernier ${relative(p.dernier_echange)}`,
+        canal && " sur ", canal),
     ),
   );
 }
@@ -230,31 +261,36 @@ async function showDetail(id) {
   const urls = await signedUrls(files.map((f) => f.chemin));
   const byContact = Object.fromEntries(contacts.data.map((c) => [c.id, c]));
 
-  body.replaceChildren(
-    h("div", { class: "detail-head" },
-      h("span", { class: `badge ${STATUT_CLASS[p.statut] || ""}` }, p.statut || "Sans statut"),
+  // Grand écran : contacts et notes ouverts dans la colonne latérale ; téléphone : repliés sous la prochaine action.
+  const wide = matchMedia("(min-width: 900px)").matches;
+  const panel = (label, count, content) =>
+    h("details", { class: "panel", open: wide || null },
+      h("summary", {}, label, count != null && h("span", { class: "count" }, count)),
+      h("div", { class: "panel-body" }, content));
+
+  body.replaceChildren(h("article", { class: "fiche" },
+    h("header", { class: "fiche-head" },
+      statusLabel(p),
       h("h2", { id: "detail-title" }, title(p)),
-      p.poste && h("p", { class: "poste" }, p.poste),
-      p.entreprise && p.intermediaire && h("p", { class: "via" }, `via ${p.intermediaire}`),
+      subtitle(p),
     ),
-    p.prochaine_action && h("section", { class: "block next-block" },
-      h("h3", {}, "Prochaine action"),
-      h("p", {}, p.date_prochaine_action && h("strong", {}, `${fmtDateOnly(p.date_prochaine_action)} · `), p.prochaine_action),
+    h("section", { class: "next-panel" },
+      stamp(p),
+      h("div", {},
+        h("h3", {}, p.date_prochaine_action ? `Prochaine action, ${fmtDateOnly(p.date_prochaine_action)}` : "Prochaine action"),
+        h("p", {}, p.prochaine_action || "Aucune action prévue."),
+      ),
     ),
-    contacts.data.length > 0 && h("section", { class: "block" },
-      h("h3", {}, "Contacts"),
-      h("ul", { class: "contacts" }, contacts.data.map(contactItem)),
+    (contacts.data.length > 0 || p.notes) && h("aside", { class: "fiche-aside" },
+      p.notes && panel("Notes", null, notesList(p.notes)),
+      contacts.data.length > 0 && panel("Contacts", contacts.data.length, h("ul", { class: "contacts" }, contacts.data.map(contactItem))),
     ),
-    p.notes && h("section", { class: "block" },
-      h("h3", {}, "Notes"),
-      notesList(p.notes),
-    ),
-    h("section", { class: "block" },
-      h("h3", {}, `Échanges (${echanges.data.length})`),
+    h("section", { class: "feed" },
+      h("h3", {}, "Échanges ", h("span", { class: "count" }, echanges.data.length)),
       timeline(echanges.data, byContact, urls),
+      h("p", { class: "meta" }, `Fiche n° ${p.id}, créée ${relative(p.created_at)}, mise à jour ${relative(p.updated_at)}`),
     ),
-    h("p", { class: "meta" }, `Fiche #${p.id} · créée ${relative(p.created_at)} · mise à jour ${relative(p.updated_at)}`),
-  );
+  ));
 }
 
 /**
@@ -310,7 +346,7 @@ function timeline(echanges, byContact, urls) {
     out.append(h("li", { class: `msg ${e.direction === "envoyé" ? "out" : "in"}` },
       h("div", { class: "msg-meta" },
         h("span", { class: `canal canal-${e.canal}` }, e.canal === "gmail" ? "Gmail" : "WhatsApp"),
-        author && h("span", {}, author),
+        author && h("span", { class: "author" }, author),
         e.date && e.date_precision === "heure" && h("time", { datetime: e.date }, fmtTime.format(new Date(e.date))),
       ),
       h("p", { class: "msg-text" }, e.contenu),
